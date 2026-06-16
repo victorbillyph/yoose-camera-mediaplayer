@@ -1,0 +1,10 @@
+DOMAIN = "yoosee_media_player"
+DEFAULT_PORT = 554
+DEFAULT_RATE = 16000
+DEFAULT_VOLUME = 0.8
+DEFAULT_TIMEOUT = 10
+
+ATTR_RATE = "rate"
+ATTR_VOLUME = "volume"
+
+SERVICE_SET_VOLUME = "set_volume"

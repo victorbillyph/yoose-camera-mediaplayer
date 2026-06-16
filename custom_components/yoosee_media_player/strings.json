@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "name": "Display name",
+          "host": "Camera IP address",
+          "port": "RTSP port (default 554)"
+        }
+      }
+    }
+  }
+}

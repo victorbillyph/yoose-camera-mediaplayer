@@ -1,0 +1,32 @@
+play_media:
+  name: Play media
+  description: Play audio through camera speaker.
+  target:
+    entity:
+      integration: yoosee_media_player
+      domain: media_player
+  fields:
+    media_content_id:
+      required: true
+      selector:
+        text:
+    media_content_type:
+      default: "audio/mpeg"
+      selector:
+        text:
+
+set_volume:
+  name: Set volume
+  description: Set camera speaker volume.
+  target:
+    entity:
+      integration: yoosee_media_player
+      domain: media_player
+  fields:
+    volume_level:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
