@@ -1,14 +1,15 @@
 import logging
-import mimetypes
 import os
-import tempfile
-from typing import Optional
 
+from homeassistant.components import media_source
 from homeassistant.components.media_player import (
     BrowseMedia,
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
     MediaPlayerState,
+)
+from homeassistant.components.media_player.browse_media import (
+    async_process_play_media_url,
 )
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -53,13 +54,11 @@ class YooseeMediaPlayer(MediaPlayerEntity):
         self._attr_volume_level = 0.8
         self._attr_supported_features = SUPPORT_YOOSEE
         self._attr_media_title = None
-        self._playing = False
         self._stop_requested = False
 
     async def async_play_media(self, media_type, media_id, **kwargs):
         self._stop_requested = False
-        title = media_id.rsplit("/", 1)[-1] if "/" in media_id else media_id
-        self._attr_media_title = title
+        self._attr_media_title = media_id.rsplit("/", 1)[-1] if "/" in media_id else media_id
         self._attr_state = MediaPlayerState.PLAYING
         self.async_write_ha_state()
 
@@ -68,26 +67,14 @@ class YooseeMediaPlayer(MediaPlayerEntity):
                 raise InterruptedError("Stopped")
 
         try:
-            source = media_id
+            if media_source.is_media_source_id(media_id):
+                resolved = await media_source.async_resolve_media(
+                    self.hass, media_id, self.entity_id
+                )
+                media_id = async_process_play_media_url(self.hass, resolved.url)
 
-            if not source.startswith(("http://", "https://", "/")):
-                try:
-                    from homeassistant.components.media_source import (
-                        async_resolve_media,
-                    )
-                    resolved = await async_resolve_media(self.hass, media_id)
-                    if resolved and resolved.url:
-                        source = resolved.url
-                except Exception as e:
-                    _LOGGER.warning("media_source resolve failed: %s", e)
-
-            if source.startswith("media-source://"):
-                _LOGGER.error("Could not resolve media_source URI: %s", source)
-                self._attr_state = MediaPlayerState.IDLE
-                self.async_write_ha_state()
-                return
-            if not source.startswith(("http://", "https://", "/")) and not os.path.isfile(source):
-                _LOGGER.error("Media not accessible: %s (resolved from %s)", source, media_id)
+            if not media_id.startswith(("http://", "https://", "/")) and not os.path.isfile(media_id):
+                _LOGGER.error("Media not accessible: %s", media_id)
                 self._attr_state = MediaPlayerState.IDLE
                 self.async_write_ha_state()
                 return
@@ -96,7 +83,7 @@ class YooseeMediaPlayer(MediaPlayerEntity):
                 play_audio,
                 self._host,
                 self._port,
-                source,
+                media_id,
                 DEFAULT_RATE,
                 self._attr_volume_level,
                 progress,
@@ -111,57 +98,13 @@ class YooseeMediaPlayer(MediaPlayerEntity):
         self.async_write_ha_state()
 
     async def async_browse_media(
-        self, media_content_type: Optional[str] = None,
-        media_content_id: Optional[str] = None,
+        self, media_content_type=None, media_content_id=None
     ) -> BrowseMedia:
-        try:
-            from homeassistant.components.media_source import (
-                async_browse_media as media_source_browse,
-            )
-            return await media_source_browse(self.hass, media_content_id)
-        except ImportError:
-            _LOGGER.warning("media_source integration not available, using file browser fallback")
-
-        root = BrowseMedia(
-            media_class="directory",
-            media_content_id="",
-            media_content_type="",
-            title="Yoosee Media Player",
-            can_play=False,
-            can_expand=True,
-            children=[],
+        return await media_source.async_browse_media(
+            self.hass,
+            media_content_id,
+            content_filter=lambda item: item.media_content_type.startswith("audio/"),
         )
-
-        for path in ("/media", "/config/media"):
-            if os.path.isdir(path):
-                root.children.append(
-                    BrowseMedia(
-                        media_class="directory",
-                        media_content_id=path,
-                        media_content_type="",
-                        title=os.path.basename(path),
-                        can_play=False,
-                        can_expand=True,
-                    )
-                )
-
-        if media_content_id:
-            root.title = os.path.basename(media_content_id)
-            root.media_content_id = media_content_id
-            root.children = [
-                BrowseMedia(
-                    media_class="music",
-                    media_content_id=os.path.join(media_content_id, f),
-                    media_content_type=mimetypes.guess_type(f)[0] or "audio/mpeg",
-                    title=f,
-                    can_play=True,
-                    can_expand=False,
-                )
-                for f in sorted(os.listdir(media_content_id))
-                if f.endswith((".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a"))
-            ]
-
-        return root
 
     async def async_stop(self):
         self._stop_requested = True
