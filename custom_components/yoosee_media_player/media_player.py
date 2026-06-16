@@ -78,10 +78,12 @@ class YooseeMediaPlayer(MediaPlayerEntity):
                     resolved = await async_resolve_media(
                         self.hass, media_id, entity_id=self.entity_id
                     )
-                    if resolved and resolved.url:
-                        url = resolved.url
+                    if resolved:
+                        _LOGGER.debug("Resolved %s -> url=%s type=%s", media_id, resolved.url, resolved.mime_type)
+                        if resolved.url:
+                            url = resolved.url
                 except Exception as e:
-                    _LOGGER.warning("media_source resolve failed, trying direct: %s", e)
+                    _LOGGER.warning("media_source resolve failed for %s: %s", media_id, e)
 
             if url.startswith(("http://", "https://")):
                 import aiohttp
@@ -100,6 +102,11 @@ class YooseeMediaPlayer(MediaPlayerEntity):
                 audio_path = tmp.name
             elif os.path.isfile(url):
                 audio_path = url
+            elif url.startswith("media-source://"):
+                _LOGGER.error("media_source resolve returned the same URI (file missing?): %s", url)
+                self._attr_state = MediaPlayerState.IDLE
+                self.async_write_ha_state()
+                return
             else:
                 _LOGGER.error("Media not found: %s", url)
                 self._attr_state = MediaPlayerState.IDLE
