@@ -1,4 +1,5 @@
 import logging
+import mimetypes
 import os
 import tempfile
 from typing import Optional
@@ -8,10 +9,6 @@ from homeassistant.components.media_player import (
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
     MediaPlayerState,
-)
-from homeassistant.components.media_source import (
-    async_browse_media as media_source_browse,
-    async_resolve_media as media_source_resolve,
 )
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -73,16 +70,19 @@ class YooseeMediaPlayer(MediaPlayerEntity):
         try:
             url = media_id
             if not url.startswith(("http://", "https://")):
-                resolved = await media_source_resolve(self.hass, media_id)
-                if resolved:
-                    url = resolved.url
-                elif os.path.isfile(media_id):
-                    pass
-                else:
-                    _LOGGER.error("Media not found: %s", media_id)
-                    self._attr_state = MediaPlayerState.IDLE
-                    self.async_write_ha_state()
-                    return
+                try:
+                    from homeassistant.components.media_source import (
+                        async_resolve_media,
+                    )
+                    resolved = await async_resolve_media(self.hass, media_id)
+                    if resolved:
+                        url = resolved.url
+                except (ImportError, ValueError):
+                    if not os.path.isfile(media_id):
+                        _LOGGER.error("Media not found: %s", media_id)
+                        self._attr_state = MediaPlayerState.IDLE
+                        self.async_write_ha_state()
+                        return
 
             if url.startswith(("http://", "https://")):
                 import aiohttp
@@ -127,7 +127,54 @@ class YooseeMediaPlayer(MediaPlayerEntity):
         self, media_content_type: Optional[str] = None,
         media_content_id: Optional[str] = None,
     ) -> BrowseMedia:
-        return await media_source_browse(self.hass, media_content_id, media_content_type)
+        if media_content_id:
+            return BrowseMedia(
+                media_class="directory",
+                media_content_id=media_content_id,
+                media_content_type="",
+                title=media_content_id.rsplit("/", 1)[-1],
+                can_play=False,
+                can_expand=True,
+                children=[
+                    BrowseMedia(
+                        media_class="music",
+                        media_content_id=os.path.join(media_content_id, f),
+                        media_content_type=mimetypes.guess_type(f)[0] or "audio/mpeg",
+                        title=f,
+                        can_play=True,
+                        can_expand=False,
+                        thumbnail=None,
+                    )
+                    for f in sorted(os.listdir(media_content_id))
+                    if f.endswith((".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a"))
+                ],
+            )
+
+        media_dirs = []
+        for p in ["/media", "/config/media"]:
+            if os.path.isdir(p):
+                media_dirs.append(p)
+
+        return BrowseMedia(
+            media_class="directory",
+            media_content_id="",
+            media_content_type="",
+            title="Yoosee Media Player",
+            can_play=False,
+            can_expand=True,
+            children=[
+                BrowseMedia(
+                    media_class="directory",
+                    media_content_id=d,
+                    media_content_type="",
+                    title=os.path.basename(d) or d,
+                    can_play=False,
+                    can_expand=True,
+                    thumbnail=None,
+                )
+                for d in media_dirs
+            ],
+        )
 
     async def async_stop(self):
         self._stop_requested = True
