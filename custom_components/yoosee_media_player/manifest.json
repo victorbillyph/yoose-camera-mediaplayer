@@ -1,10 +1,10 @@
 {
   "domain": "yoosee_media_player",
   "name": "Yoosee Camera Media Player",
-  "codeowners": [],
+  "codeowners": ["@victorbillyph"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/your-repo/yoosee-camera-mediaplayer",
+  "documentation": "https://github.com/victorbillyph/yoose-camera-mediaplayer",
   "integration_type": "device",
   "iot_class": "local_push",
   "requirements": [],
