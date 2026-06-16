@@ -76,7 +76,7 @@ class YooseeMediaPlayer(MediaPlayerEntity):
                         async_resolve_media,
                     )
                     resolved = await async_resolve_media(
-                        self.hass, media_id, self.entity_id
+                        self.hass, media_id, entity_id=self.entity_id
                     )
                     if resolved and resolved.url:
                         url = resolved.url
@@ -135,7 +135,7 @@ class YooseeMediaPlayer(MediaPlayerEntity):
             from homeassistant.components.media_source import (
                 async_browse_media as media_source_browse,
             )
-            return await media_source_browse(self.hass, media_content_id, media_content_type)
+            return await media_source_browse(self.hass, media_content_id)
         except ImportError:
             _LOGGER.warning("media_source integration not available, using file browser fallback")
 
