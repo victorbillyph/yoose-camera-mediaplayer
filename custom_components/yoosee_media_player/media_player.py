@@ -75,14 +75,17 @@ class YooseeMediaPlayer(MediaPlayerEntity):
                     from homeassistant.components.media_source import (
                         async_resolve_media,
                     )
-                    resolved = await async_resolve_media(
-                        self.hass, media_id, entity_id=self.entity_id
-                    )
+                    resolved = await async_resolve_media(self.hass, media_id)
                     if resolved and resolved.url:
                         source = resolved.url
                 except Exception as e:
                     _LOGGER.warning("media_source resolve failed: %s", e)
 
+            if source.startswith("media-source://"):
+                _LOGGER.error("Could not resolve media_source URI: %s", source)
+                self._attr_state = MediaPlayerState.IDLE
+                self.async_write_ha_state()
+                return
             if not source.startswith(("http://", "https://", "/")) and not os.path.isfile(source):
                 _LOGGER.error("Media not accessible: %s (resolved from %s)", source, media_id)
                 self._attr_state = MediaPlayerState.IDLE
