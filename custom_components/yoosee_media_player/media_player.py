@@ -68,9 +68,9 @@ class YooseeMediaPlayer(MediaPlayerEntity):
                 raise InterruptedError("Stopped")
 
         try:
-            url = media_id
+            source = media_id
 
-            if not url.startswith(("http://", "https://")):
+            if not source.startswith(("http://", "https://", "/")):
                 try:
                     from homeassistant.components.media_source import (
                         async_resolve_media,
@@ -78,37 +78,13 @@ class YooseeMediaPlayer(MediaPlayerEntity):
                     resolved = await async_resolve_media(
                         self.hass, media_id, entity_id=self.entity_id
                     )
-                    if resolved:
-                        _LOGGER.debug("Resolved %s -> url=%s type=%s", media_id, resolved.url, resolved.mime_type)
-                        if resolved.url:
-                            url = resolved.url
+                    if resolved and resolved.url:
+                        source = resolved.url
                 except Exception as e:
-                    _LOGGER.warning("media_source resolve failed for %s: %s", media_id, e)
+                    _LOGGER.warning("media_source resolve failed: %s", e)
 
-            if url.startswith(("http://", "https://")):
-                import aiohttp
-
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(url) as resp:
-                        if resp.status != 200:
-                            _LOGGER.error("Failed to download %s: %s", url, resp.status)
-                            self._attr_state = MediaPlayerState.IDLE
-                            self.async_write_ha_state()
-                            return
-                        data = await resp.read()
-                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-                tmp.write(data)
-                tmp.close()
-                audio_path = tmp.name
-            elif os.path.isfile(url):
-                audio_path = url
-            elif url.startswith("media-source://"):
-                _LOGGER.error("media_source resolve returned the same URI (file missing?): %s", url)
-                self._attr_state = MediaPlayerState.IDLE
-                self.async_write_ha_state()
-                return
-            else:
-                _LOGGER.error("Media not found: %s", url)
+            if not source.startswith(("http://", "https://", "/")) and not os.path.isfile(source):
+                _LOGGER.error("Media not accessible: %s (resolved from %s)", source, media_id)
                 self._attr_state = MediaPlayerState.IDLE
                 self.async_write_ha_state()
                 return
@@ -117,14 +93,11 @@ class YooseeMediaPlayer(MediaPlayerEntity):
                 play_audio,
                 self._host,
                 self._port,
-                audio_path,
+                source,
                 DEFAULT_RATE,
                 self._attr_volume_level,
                 progress,
             )
-
-            if url != audio_path:
-                os.unlink(audio_path)
         except InterruptedError:
             _LOGGER.debug("Playback stopped by user")
         except Exception as e:
