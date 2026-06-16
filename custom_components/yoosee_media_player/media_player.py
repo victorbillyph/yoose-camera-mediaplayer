@@ -77,7 +77,6 @@ class YooseeMediaPlayer(MediaPlayerEntity):
                     resolved = await async_resolve_media(self.hass, media_id)
                     if resolved:
                         url = resolved.url
-                        title = resolved.title or title
                     else:
                         raise ValueError("Could not resolve media source")
                 except Exception as e:
