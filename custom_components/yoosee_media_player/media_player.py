@@ -1,17 +1,20 @@
 import logging
 import os
 import tempfile
+from typing import Optional
 
-import aiofiles
-import homeassistant.util.dt as dt_util
 from homeassistant.components.media_player import (
+    BrowseMedia,
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
     MediaPlayerState,
 )
+from homeassistant.components.media_source import (
+    async_browse_media as media_source_browse,
+    async_resolve_media as media_source_resolve,
+)
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 from .const import DOMAIN, DEFAULT_RATE, DEFAULT_VOLUME
 from .talk import play_audio, set_volume
@@ -20,6 +23,7 @@ _LOGGER = logging.getLogger(__name__)
 
 SUPPORT_YOOSEE = (
     MediaPlayerEntityFeature.PLAY_MEDIA
+    | MediaPlayerEntityFeature.BROWSE_MEDIA
     | MediaPlayerEntityFeature.STOP
     | MediaPlayerEntityFeature.VOLUME_SET
     | MediaPlayerEntityFeature.VOLUME_STEP
@@ -57,7 +61,8 @@ class YooseeMediaPlayer(MediaPlayerEntity):
 
     async def async_play_media(self, media_type, media_id, **kwargs):
         self._stop_requested = False
-        self._attr_media_title = media_id.rsplit("/", 1)[-1] if "/" in media_id else media_id
+        title = media_id.rsplit("/", 1)[-1] if "/" in media_id else media_id
+        self._attr_media_title = title
         self._attr_state = MediaPlayerState.PLAYING
         self.async_write_ha_state()
 
@@ -66,13 +71,26 @@ class YooseeMediaPlayer(MediaPlayerEntity):
                 raise InterruptedError("Stopped")
 
         try:
-            if media_id.startswith(("http://", "https://")):
+            url = media_id
+            if not url.startswith(("http://", "https://")):
+                resolved = await media_source_resolve(self.hass, media_id)
+                if resolved:
+                    url = resolved.url
+                elif os.path.isfile(media_id):
+                    pass
+                else:
+                    _LOGGER.error("Media not found: %s", media_id)
+                    self._attr_state = MediaPlayerState.IDLE
+                    self.async_write_ha_state()
+                    return
+
+            if url.startswith(("http://", "https://")):
                 import aiohttp
 
                 async with aiohttp.ClientSession() as session:
-                    async with session.get(media_id) as resp:
+                    async with session.get(url) as resp:
                         if resp.status != 200:
-                            _LOGGER.error("Failed to download %s: %s", media_id, resp.status)
+                            _LOGGER.error("Failed to download %s: %s", url, resp.status)
                             self._attr_state = MediaPlayerState.IDLE
                             self.async_write_ha_state()
                             return
@@ -81,13 +99,8 @@ class YooseeMediaPlayer(MediaPlayerEntity):
                 tmp.write(data)
                 tmp.close()
                 audio_path = tmp.name
-            elif os.path.isfile(media_id):
-                audio_path = media_id
             else:
-                _LOGGER.error("Media not found: %s", media_id)
-                self._attr_state = MediaPlayerState.IDLE
-                self.async_write_ha_state()
-                return
+                audio_path = media_id
 
             await self.hass.async_add_executor_job(
                 play_audio,
@@ -99,7 +112,7 @@ class YooseeMediaPlayer(MediaPlayerEntity):
                 progress,
             )
 
-            if media_id.startswith(("http://", "https://")):
+            if url != audio_path:
                 os.unlink(audio_path)
         except InterruptedError:
             _LOGGER.debug("Playback stopped by user")
@@ -109,6 +122,12 @@ class YooseeMediaPlayer(MediaPlayerEntity):
         self._attr_state = MediaPlayerState.IDLE
         self._attr_media_title = None
         self.async_write_ha_state()
+
+    async def async_browse_media(
+        self, media_content_type: Optional[str] = None,
+        media_content_id: Optional[str] = None,
+    ) -> BrowseMedia:
+        return await media_source_browse(self.hass, media_content_id, media_content_type)
 
     async def async_stop(self):
         self._stop_requested = True
